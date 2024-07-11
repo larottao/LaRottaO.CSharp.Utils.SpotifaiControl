@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿/*
 
 After having terrible experiences with some NuGet packages designed to control Spotify using C#, 
 I put together this code by integrating various parts found online. It manages authentication using the web browser 
@@ -13,14 +13,12 @@ Remember to set the redirect URL on the spotify dashboard as http://localhost:88
 
 */
 
-
 using Newtonsoft.Json.Linq;
 using RestSharp;
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Threading;
 using System.Web;
 
 namespace LaRottaO.CSharp.SpotifaiControl
@@ -31,6 +29,7 @@ namespace LaRottaO.CSharp.SpotifaiControl
         private static readonly string AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize";
         private static readonly string REDIRECT_URI = "http://localhost:8888/callback/";
         private static readonly string CREDENTIALS_FILE = "spotify_credentials.json";
+        private static readonly string TOKEN_FILE = "spotify_token.txt";
         private static readonly string BASE_URL = "https://api.spotify.com/v1";
 
         static string clientId;
@@ -47,9 +46,8 @@ namespace LaRottaO.CSharp.SpotifaiControl
                     CLIENT_ID = "your_client_id",
                     CLIENT_SECRET = "your_client_secret"
                 };
-				
-				//Write your spotify credentials on the newly created file and launch the application again
-				
+
+                //Write your spotify credentials on the newly created file and launch the application again
                 File.WriteAllText(CREDENTIALS_FILE, Newtonsoft.Json.JsonConvert.SerializeObject(credentials, Newtonsoft.Json.Formatting.Indented));
                 Console.WriteLine($"Created {CREDENTIALS_FILE}. Please fill in your Spotify credentials.");
                 Environment.Exit(1);
@@ -58,12 +56,11 @@ namespace LaRottaO.CSharp.SpotifaiControl
             try
             {
                 string jsonContent = File.ReadAllText(CREDENTIALS_FILE);
-            
                 JObject credentials = JObject.Parse(jsonContent);
-            
+
                 clientId = (string)credentials["CLIENT_ID"];
                 clientSecret = (string)credentials["CLIENT_SECRET"];
-                
+
                 Console.WriteLine($"CLIENT_ID: {clientId}");
                 Console.WriteLine($"CLIENT_SECRET: {clientSecret}");
             }
@@ -71,6 +68,34 @@ namespace LaRottaO.CSharp.SpotifaiControl
             {
                 Console.WriteLine($"Error reading JSON file: {ex.Message}");
             }
+        }
+
+        public static bool CheckAccessToken()
+        {
+            if (File.Exists(TOKEN_FILE))
+            {
+                accessToken = File.ReadAllText(TOKEN_FILE);
+                if (IsTokenValid())
+                {
+                    Console.WriteLine("Access token loaded from file.");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine("Stored access token is invalid or expired.");
+                }
+            }
+            return false;
+        }
+
+        public static bool IsTokenValid()
+        {
+            var tokenClient = new RestClient(BASE_URL);
+            var request = new RestRequest("me", Method.Get);
+            request.AddHeader("Authorization", $"Bearer {accessToken}");
+
+            var response = tokenClient.Execute(request);
+            return response.IsSuccessful;
         }
 
         public static void GetAccessToken()
@@ -85,11 +110,11 @@ namespace LaRottaO.CSharp.SpotifaiControl
                 FileName = authorizeUrl,
                 UseShellExecute = true
             });
-          
+
             var listener = new HttpListener();
             listener.Prefixes.Add(REDIRECT_URI);
             listener.Start();
-        
+
             var context = listener.GetContext();
             var code = HttpUtility.ParseQueryString(context.Request.Url.Query).Get("code");
 
@@ -102,7 +127,7 @@ namespace LaRottaO.CSharp.SpotifaiControl
                 context.Response.OutputStream.Write(buffer, 0, buffer.Length);
                 context.Response.OutputStream.Close();
                 listener.Stop();
-              
+
                 var tokenClient = new RestClient(TOKEN_ENDPOINT);
                 var request = new RestRequest
                 {
@@ -122,6 +147,7 @@ namespace LaRottaO.CSharp.SpotifaiControl
                 {
                     var tokenResponse = JObject.Parse(response.Content);
                     accessToken = tokenResponse["access_token"].ToString();
+                    File.WriteAllText(TOKEN_FILE, accessToken);
                     Console.WriteLine($"Access Token: {accessToken}");
                 }
                 else
@@ -138,11 +164,14 @@ namespace LaRottaO.CSharp.SpotifaiControl
         public static void Authenticate()
         {
             LoadCredentials();
-            GetAccessToken();
+
+            if (!CheckAccessToken())
+            {
+                GetAccessToken();
+            }
 
             client = new RestClient(BASE_URL);
             client.AddDefaultHeader("Authorization", $"Bearer {accessToken}");
-			
         }
 
         public static void Play()
@@ -240,6 +269,5 @@ namespace LaRottaO.CSharp.SpotifaiControl
                 return null;
             }
         }
-    
     }
 }
